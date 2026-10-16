@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>dsh-splash-crt · 开屏动画预览</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace; }
+
+  /* 控制条：正式画面在它下面照常跑；?bare=1 可整条隐藏（出图用） */
+  #bar {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    z-index: 2147483600; display: flex; flex-wrap: wrap; gap: 8px 10px;
+    align-items: center; padding: 10px 14px; max-width: min(1240px, 94vw);
+    box-sizing: border-box;
+    background: rgba(6, 10, 16, 0.86);
+    border: 1px solid rgba(120, 170, 255, 0.35);
+    border-radius: 10px; backdrop-filter: blur(6px);
+    box-shadow: 0 8px 34px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(0, 0, 0, 0.5) inset;
+    color: #cfe0ff; font-size: 12px; line-height: 1.1;
+    user-select: none;
+  }
+  #bar .grp { display: flex; align-items: center; gap: 6px; }
+  #bar .sep { width: 1px; height: 20px; background: rgba(120, 170, 255, 0.28); }
+  #bar button {
+    font: inherit; color: #dbe9ff; cursor: pointer;
+    background: rgba(40, 70, 130, 0.35);
+    border: 1px solid rgba(120, 170, 255, 0.4);
+    border-radius: 6px; padding: 5px 9px;
+  }
+  #bar button:hover { background: rgba(70, 120, 210, 0.45); }
+  #bar button[data-active="1"] { background: #2f6bff; border-color: #6ea0ff; color: #fff; }
+  #bar label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  #bar input[type=range] { width: 190px; accent-color: #3d7dff; }
+  #bar input[type=number] { width: 66px; font: inherit; color: #dbe9ff; background: rgba(0,0,0,.5);
+    border: 1px solid rgba(120,170,255,.35); border-radius: 5px; padding: 3px 5px; }
+  #readout { color: #7dffb0; min-width: 250px; }
+  #readout b { color: #fff; font-weight: 600; }
+  #hint { position: fixed; left: 50%; top: 16px; transform: translateX(-50%); z-index: 2147483600;
+    color: rgba(200, 220, 255, 0.75); font-size: 12px; letter-spacing: .04em; }
+  #mirrorWrap { position: fixed; inset: 0; z-index: 2147483550; background: #000; overflow: auto; }
+  #mirrorWrap img { display: block; width: 100%; height: auto; }
+  body[data-bare="1"] #bar, body[data-bare="1"] #hint { display: none; }
+</style>
+</head>
+<body>
+<div id="hint">dsh-splash-crt 预览 · 动画与真机同一份代码（lib/client.js）</div>
+
+<script>
+// 预览配置：直接给客户端，不走 fetch（file:// 下 fetch 会被 CORS 拦掉）
+window.__DSH_SPLASH_PREVIEW__ = {
+  enabled: true,
+  skipMode: 'any',
+  fadeOutMs: 600,
+  bootMs: 1400,
+  wipeStartMs: 5000,
+  wipeMs: 14000,
+  wipeHoldMs: 5000,
+  scanlineIntensity: 1,
+}
+</script>
+
+<div id="bar">
+  <div class="grp">
+    <button id="play" data-active="1">▶ 播放</button>
+    <button id="pause">⏸ 定帧</button>
+    <button id="replay">⟲ 从头播放</button>
+  </div>
+  <div class="sep"></div>
+  <div class="grp">
+    <button id="s-boot">灯丝预热</button>
+    <button id="s-idle">待机（未开始反色）</button>
+    <button id="s-white">反色一程中</button>
+    <button id="s-full">全反色</button>
+    <button id="s-black">反黑一程中</button>
+    <button id="s-blackhold">全黑停留</button>
+    <button id="s-exit">收屏淡出</button>
+  </div>
+  <div class="sep"></div>
+  <div class="grp">
+    <label>时刻 <input id="time" type="range" min="0" max="90" step="0.05" value="0"><span id="timeval">0.00s</span></label>
+  </div>
+  <div class="sep"></div>
+  <div class="grp">
+    <label>预热 <input id="boot" type="number" min="400" max="6000" step="100" value="1400">ms</label>
+    <label>反色开始 <input id="start" type="number" min="0" max="30000" step="500" value="5000">ms</label>
+    <label>一程 <input id="span" type="number" min="800" max="30000" step="500" value="14000">ms</label>
+    <label>到位停留 <input id="hold" type="number" min="0" max="20000" step="500" value="5000">ms</label>
+    <label>退出 <select id="skip" style="font:inherit;color:#dbe9ff;background:rgba(0,0,0,.5);border:1px solid rgba(120,170,255,.35);border-radius:5px;padding:3px 5px">
+      <option value="any">点击或按键</option><option value="click">仅点击</option><option value="key">仅按键</option>
+    </select></label>
+  </div>
+  <div class="sep"></div>
+  <div id="readout">phase <b id="r-phase">-</b> · t <b id="r-t">0.00</b>s · 扫掠 <b id="r-wipe">-</b></div>
+  <div class="sep"></div>
+  <div class="grp">
+    <button id="mirror">⬒ 像素镜像</button>
+  </div>
+</div>
+
+<!-- 像素镜像：把开屏画布原样贴成 <img>。
+     用途一：headless 截图/录屏抓不到 WebGL 画布，这是唯一能看到真实画面的方式；
+     用途二：和"画布实际像素"逐像素对照，排查渲染问题。 -->
+<div id="mirrorWrap" hidden>
+  <div id="mirrorDiag" style="position:fixed;left:8px;top:8px;z-index:10;font:12px monospace;color:#7dffb0;background:rgba(0,0,0,.7);padding:4px 8px;border:1px solid #24344d"></div>
+  <img id="mirrorImg" alt="splash canvas">
+</div>
+
+<script src="../lib/client.js"></script>
+<script>
+const params = new URLSearchParams(location.search)
+if (params.get('bare') === '1') document.body.dataset.bare = '1'
+
+const $ = (id) => document.getElementById(id)
+const bar = $('bar')
+
+// 控制条上的点击/按键不能被开屏浮层当成"跳过"
+for (const type of ['pointerdown', 'mousedown', 'click', 'keydown', 'touchstart']) {
+  bar.addEventListener(type, (e) => e.stopPropagation(), true)
+}
+
+let api = null
+const ready = () => {
+  api = window.__DSH_SPLASH_CRT__ && window.__DSH_SPLASH_CRT__.debug
+  return Boolean(api)
+}
+
+const state = { phase: 'screen1', frozen: false, time: 0 }
+
+function refresh() {
+  if (!ready()) return
+  const info = api.info()
+  $('r-phase').textContent = info.phase
+  $('r-t').textContent = info.phaseT.toFixed(2)
+  const w = info.wipe
+  $('r-wipe').textContent = !w.active
+    ? '未开始'
+    : (w.holding ? `#${w.pass} ${w.flip ? '全黑停留中' : '全白停留中'}` : `#${w.pass}${w.flip ? '→黑' : '→白'} ${(w.u * 100).toFixed(0)}%`)
+  $('timeval').textContent = state.time.toFixed(2) + 's'
+}
+
+function freezeAt(phase, t) {
+  if (!ready()) return
+  state.phase = phase
+  state.time = t
+  state.frozen = true
+  api.freezeAt(phase, t)
+  $('play').dataset.active = '0'
+  $('pause').dataset.active = '1'
+  $('time').value = String(t)
+  refresh()
+}
+
+function resume() {
+  if (!ready()) return
+  state.frozen = false
+  api.resume()
+  $('play').dataset.active = '1'
+  $('pause').dataset.active = '0'
+  refresh()
+}
+
+/** 从头播放：回到第一屏 0 秒再放开时间轴。 */
+function replayFromStart() {
+  if (!ready()) return
+  state.phase = 'screen1'
+  state.time = 0
+  api.freezeAt('screen1', 0)
+  $('time').value = '0'
+  setTimeout(resume, 30)
+}
+
+const cfg = () => ({
+  bootMs: Number($('boot').value) || 1400,
+  wipeStartMs: Number($('start').value) || 0,
+  wipeMs: Number($('span').value) || 14000,
+  wipeHoldMs: Number($('hold').value) || 0,
+})
+
+// ---- 控件绑定 -------------------------------------------------------------
+$('play').onclick = () => {
+  if (state.phase === 'exiting') replayFromStart()
+  else resume()
+}
+$('pause').onclick = () => freezeAt(state.phase, state.time)
+$('replay').onclick = () => replayFromStart()
+
+// 关键时刻：预热中点 / 反色前的待机 / 白扫掠中 / 全白 / 黑扫掠中 / 收屏
+$('s-boot').onclick = () => freezeAt('screen1', cfg().bootMs / 1000 * 0.5)
+$('s-idle').onclick = () => freezeAt('screen1', Math.max(cfg().bootMs, cfg().wipeStartMs) / 1000 - 0.2)
+$('s-white').onclick = () => freezeAt('screen1', (cfg().wipeStartMs + cfg().wipeMs * 0.5) / 1000)
+$('s-full').onclick = () => freezeAt('screen1', (cfg().wipeStartMs + cfg().wipeMs + cfg().wipeHoldMs * 0.5) / 1000)
+$('s-black').onclick = () => freezeAt('screen1', (cfg().wipeStartMs + cfg().wipeMs + cfg().wipeHoldMs + cfg().wipeMs * 0.5) / 1000)
+$('s-blackhold').onclick = () => freezeAt('screen1', (cfg().wipeStartMs + cfg().wipeMs * 2 + cfg().wipeHoldMs * 1.5) / 1000)
+$('s-exit').onclick = () => freezeAt('exiting', 0.25)
+
+$('time').oninput = (e) => {
+  const t = Number(e.target.value)
+  freezeAt(t >= Number($('boot').value) / 1000 && t >= Number($('start').value) / 1000 ? 'screen1' : 'screen1', t)
+}
+$('boot').onchange = () => { if (ready()) api.set({ bootMs: cfg().bootMs }); refresh() }
+$('start').onchange = () => { if (ready()) api.set({ wipeStartMs: cfg().wipeStartMs }); refresh() }
+$('span').onchange = () => { if (ready()) api.set({ wipeMs: cfg().wipeMs }); refresh() }
+$('hold').onchange = () => { if (ready()) api.set({ wipeHoldMs: cfg().wipeHoldMs }); refresh() }
+$('skip').onchange = (e) => { if (ready()) api.set({ skipMode: e.target.value }) }
+
+// 像素镜像：每 250ms 把画布内容贴到 <img>（见 #mirrorWrap 的注释）
+let mirrorOn = false
+function mirrorTick() {
+  if (!mirrorOn) return
+  if (!ready()) { $('mirrorDiag').textContent = 'mirror: 客户端未就绪'; return }
+  const p = api.pixelProbe()
+  if (p && p.dataUrl) $('mirrorImg').src = p.dataUrl
+  $('mirrorDiag').textContent = 'mirror: ' + (p && p.dataUrl ? p.dataUrl.length + ' chars' : 'probe failed')
+    + ' · white/black/mid=' + (p && p.pixels ? `${p.pixels.white}/${p.pixels.black}/${p.pixels.mid}` : '?')
+    + ' · plat=' + (p && p.platformLitShare) + '%'
+    + ' · ' + JSON.stringify(p && p.phase)
+    + ' · canvas=' + (p && p.canvas)
+    + ' · ' + (p && p.error ? p.error : 'ok')
+}
+setInterval(mirrorTick, 250)
+function setMirror(on) {
+  mirrorOn = on
+  $('mirrorWrap').hidden = !on
+  $('mirror').dataset.active = on ? '1' : '0'
+  if (on) mirrorTick()
+}
+$('mirror').onclick = () => setMirror(!mirrorOn)
+
+// 未定帧时让时间滑杆跟随播放推进
+setInterval(() => {
+  if (!ready() || state.frozen) return
+  const info = api.info()
+  state.phase = info.phase
+  state.time = info.phaseT
+  $('time').value = String(Math.min(info.phaseT, Number($('time').max)))
+  refresh()
+}, 100)
+
+// ---- 启动：?freeze=screen1:8 由客户端自己定帧，这里只同步 UI -----------------
+const boot = setInterval(() => {
+  if (!ready()) return
+  clearInterval(boot)
+  const d = api.info()
+  $('boot').value = String(d.bootMs)
+  $('start').value = String(d.wipeStartMs)
+  $('span').value = String(d.wipeMs)
+  $('hold').value = String(d.wipeHoldMs)
+  const p = params.get('freeze')
+  if (p) {
+    const [ph, sec] = p.split(':')
+    state.phase = ph || 'screen1'
+    state.time = Number(sec) || 0
+    state.frozen = true
+    $('play').dataset.active = '0'
+    $('pause').dataset.active = '1'
+    $('time').value = String(state.time)
+  }
+  refresh()
+  if (params.get('mirror') === '1') setMirror(true)   // ?mirror=1 直接开像素镜像
+}, 60)
+</script>
+</body>
+</html>

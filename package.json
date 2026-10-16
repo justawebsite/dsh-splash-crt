@@ -1,0 +1,28 @@
+{
+  "name": "dsh-splash-crt",
+  "version": "0.2.0",
+  "private": true,
+  "description": "DSH 工业科技风开屏动画插件：CRT 显像管辉光字体 + 循环反色扫掠（分界线由左下至右上行进）",
+  "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "splash", "crt"],
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./bootstrap": "./lib/bootstrap.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "tools", "cordis.patch.yml", "README.md"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "preview": "node tools/preview-server.mjs 8791"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "license": "MIT"
+}

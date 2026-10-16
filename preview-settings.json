@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "skipMode": "any",
+  "fadeOutMs": 600,
+  "bootMs": 1400,
+  "wipeStartMs": 5000,
+  "wipeMs": 14000,
+  "wipeHoldMs": 5000,
+  "scanlineIntensity": 1
+}
